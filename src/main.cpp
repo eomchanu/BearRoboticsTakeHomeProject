@@ -3,39 +3,49 @@
 #include "../include/Card.h"
 #include "../include/MockBank.h"
 #include "../include/MockCashBin.h"
+#include "../include/ATMController.h"
 
 int main() {
-    // Hard coded account, card, bank, and cash bin
-    Account acc(1, 100);
-    int PINcode = 1234;
-    Card card = {"1111-2222-3333-4444", PINcode, 1};
-
-    MockBank bank;
-    bank.addAccount(acc, PINcode);
-
+    // Initialize mock cash bin, bank, and account
     MockCashBin cashBin;
+    MockBank bank;
+    Account acc(1, 100);
+    bank.addAccount(acc, 1234);
+
+    // Create mock card linked to the above account
+    Card card = {"1111-2222-3333-4444", 1234, 1};
+
+    // Set up the ATM controller
+    ATMController atm(bank, cashBin);
+
+    // Requirements 1. Insert Card
+    if (!atm.insertCard(card)) {
+        std::cout << "Failed to insert card." << std::endl;
+        return 1;
+    }
+    std::cout << "Card inserted into the ATM." << std::endl;
 
     int inputPin;
-    std::cout << "Card inserted into the ATM." << std::endl;
     std::cout << "Please enter your PIN: ";
     std::cin >> inputPin;
 
-    // PIN validation using MockBank
-    if (!bank.verifyPin(card, inputPin)) {
+    // Requirements 2. Enter PIN number
+    if (!atm.enterPin(inputPin)) {
         std::cout << "Incorrect PIN. Exiting transaction." << std::endl;
+        atm.ejectCard();
         return 0;
     }
 
-    // Account lookup using MockBank
-    auto accountOpt = bank.findAccount(card.accountId);
-    if (!accountOpt.has_value()) {
-        std::cout << "Account not found. Exiting." << std::endl;
+    // Requirements 3. Select Account
+    if (!atm.selectAccount(card.accountId)) {
+        std::cout << "Account not found. Exiting transaction." << std::endl;
+        atm.ejectCard();
         return 0;
     }
-    Account* account = accountOpt.value();
 
     std::cout << "Authentication success!" << std::endl;
 
+    // Requirements 4. See Balance/Deposit/Withdraw
     while (true) {
         // ATM menu
         std::cout << "\n--- ATM Menu ---\n";
@@ -49,32 +59,36 @@ int main() {
         std::cin >> choice;
 
         if (choice == 1) { // Check balance
-            std::cout << "Current balance: $" << account->getBalance() << "\n";
+            int balance = atm.checkBalance();
+            if (balance >= 0) {
+                std::cout << "Current balance: $" << balance << "\n";
+            } else {
+                std::cout << "Cannot check balance.\n";
+            }
         }
         else if (choice == 2) { // Deposit
             int amount;
             std::cout << "Enter amount to deposit: ";
             std::cin >> amount;
-            // Accept money to cash bin first, then to account
-            if (amount > 0 && cashBin.accept(amount) && account->deposit(amount)) {
+            if (atm.deposit(amount)) {
                 std::cout << "$" << amount << " deposited successfully!\n";
             } else {
-                std::cout << "Invalid amount entered or ATM error.\n";
+                std::cout << "Deposit failed (invalid amount or ATM error).\n";
             }
         }
         else if (choice == 3) { // Withdraw
             int amount;
             std::cout << "Enter amount to withdraw: ";
             std::cin >> amount;
-            // Withdraw from account first, then from cash bin
-            if (amount > 0 && account->getBalance() >= amount && cashBin.dispense(amount) && account->withdraw(amount)) {
+            if (atm.withdraw(amount)) {
                 std::cout << "$" << amount << " withdrawn successfully!\n";
             } else {
-                std::cout << "Invalid amount, insufficient funds, or ATM cash shortage.\n";
+                std::cout << "Withdraw failed (invalid amount, insufficient balance, or ATM cash shortage).\n";
             }
         }
         else if (choice == 4) { // Exit
-            std::cout << "Bye bye~\n";
+            std::cout << "\nBye bye~\n";
+            atm.ejectCard();
             break;
         }
         else {
